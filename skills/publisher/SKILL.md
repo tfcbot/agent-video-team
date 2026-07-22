@@ -3,17 +3,14 @@ name: publisher
 description: >-
   Schedule content to connected accounts and manage account connections via Zernio.
   Handles media upload, caption writing, timing, and account verification.
-requires:
-  env:
-    - ZERNIO_API_KEY
-compatibility: Account must be connected via Zernio dashboard and visible in GET /accounts.
-homepage: https://github.com/tfcbot/agent-video-team
-source: https://github.com/tfcbot/agent-video-team
 ---
 
-# Publisher
+# Publisher — External Zernio
 
-Schedule content to connected Instagram accounts via Zernio and manage account connections. Handles media upload, caption writing, timing, and account health.
+Schedule content through Zernio. This is an external integration: Vidjutsu
+`/v1/posts` stores draft post records but does not schedule or publish them,
+and Vidjutsu has no `/media/presign` endpoint. Do not send the requests below to
+`api.vidjutsu.ai`.
 
 Base URL: `https://zernio.com/api/v1`
 Auth header: `Authorization: Bearer $ZERNIO_API_KEY`
@@ -131,6 +128,9 @@ Authorization: Bearer $ZERNIO_API_KEY
 
 Update: `PUT /posts/:id` | Cancel: `DELETE /posts/:id`
 
+These path-parameter routes are Zernio routes. Vidjutsu CRUD uses
+`PUT /v1/posts?id=...` and `DELETE /v1/posts?id=...` and does not publish.
+
 ## Timing
 
 - Post 1-2x per day per account.
@@ -143,3 +143,6 @@ Update: `PUT /posts/:id` | Cancel: `DELETE /posts/:id`
 - **Always upload media first** via presign flow.
 - **Scheduling and post creation happen in one call.**
 - **Don't batch-schedule 30 days** — schedule 3-7 days ahead max.
+- **Keep systems distinct.** Store a Vidjutsu draft record only when lineage is
+  useful; use Zernio as the publishing authority and never imply Vidjutsu
+  scheduled the post.

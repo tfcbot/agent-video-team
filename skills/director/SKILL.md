@@ -1,66 +1,54 @@
 ---
 name: director
 description: >-
-  Orchestrate AI video production. Chains the pipeline steps — frame gen, clip gen, QA gates,
-  and post-production — for any video style. Adapts to the user's format, model, and character.
-requires:
-  env:
-    - KIE_API_KEY
-    - VIDJUTSU_API_KEY
-compatibility: >-
-  Orchestrates director-frame-gen, director-clip-gen, director-qa, and editor-post-production skills.
-  Full VidJutsu API reference at https://docs.vidjutsu.ai/llms.txt
+  Orchestrate Vidjutsu's tenant-scoped short-form clone workflow: stage a social
+  source, check cloneability, create or reuse a character, compose the first
+  frame, render with Kling 3.0, run QA, and finish post-production.
 ---
 
 # Director
 
-Orchestrate AI video production for any style — talking head, b-roll, product demo, podcast, or custom. This skill chains the pipeline steps. Each step has its own skill with detailed instructions.
+Run the production workflow in dependency order. Reuse every completed artifact
+and never repeat a paid generation merely because a later stage failed.
+
+Use `https://api.vidjutsu.ai` with
+`Authorization: Bearer <VIDJUTSU_API_KEY>`. The generation and intelligence
+stages require an active subscription and share fixed daily limits.
 
 ## Inputs
 
-Ask the user for:
-
-1. **What kind of video?** — style, tone, purpose (e.g. "lofi b-roll surfing video", "talking head explaining a product", "podcast clip")
-2. **Character** — directory with `character.json` containing `name`, `promptBase`, `referenceSheet.url`, optionally `voiceId`
-3. **Scenes** — scene prompts from `/prompt-writer`, or describe what happens and this skill will write basic prompts. For best results, use `/prompt-writer` first — it applies model-specific prompt structure and camera vocabulary.
-4. **Model** — Seedance 2, Sora 2, or Kling 3.0 (see `/model-provider`)
-
-## Determine Format Config
-
-Based on what the user described, determine these settings:
-
-| Setting | When ON | When OFF |
-|---|---|---|
-| **Sound** | Video has spoken dialogue | Silent / overlay-only / music-only |
-| **Speech gate** | Video has spoken dialogue | No dialogue |
-| **STS voice swap** | Video has spoken dialogue and character has `voiceId` | No dialogue or no voice clone |
-| **Loudnorm** | Video has spoken dialogue | Silent |
-| **Overlay text** | User provides overlay text | No overlay needed |
-| **Music** | User provides music prompt or URL | No music |
-| **Motion in prompts** | B-roll, lifestyle, action content | Talking head (stillness required) |
+Collect the TikTok or Instagram source URL, a reusable character ID or character
+description, optional motion prompt, optional overlay text, and whether external
+ZapCap captions are wanted.
 
 ## Pipeline
 
-Run these steps in order. Each step is a separate skill — invoke it or follow its instructions inline.
+1. **Stage the source once.** Use the platform-specific Vidjutsu download
+   method and retain its CDN `url` and `assetId`.
+2. **Check cloneability.** Call `POST /v1/clones/check` with the staged
+   `videoUrl`. Treat returned `{verdict,score,evidence,model}` as authoritative;
+   stop on `weak` unless the user explicitly overrides it.
+3. **Extract frame zero.** Call `POST /v1/extract` with
+   `{ "mediaUrl": sourceUrl, "frames": [0] }`; retain `frames[0].url`.
+4. **Resolve identity.** Reuse a tenant-owned `char_...` ID, or call
+   `POST /v1/characters` once with `{prompt, referenceImageUrl?}`.
+5. **Create the starting image.** Call `POST /v1/clones/starting-image` with
+   exactly `{firstFrame, characterId, prompt}`.
+6. **Submit the clone.** Call `POST /v1/clones/video` with
+   `{startingImageUrl, sourceVideoUrl, model:"kling", prompt?}`. Source clips
+   must be 3–15 seconds.
+7. **Persist and poll the Vidjutsu task ID.** Read only
+   `GET /v1/clones/video/{id}`. While `processing`, resume later; on
+   `completed`, retain `videoUrl`; on `failed`, report `error`.
+8. **Run QA.** Use `/director-qa` on the completed Vidjutsu URL.
+9. **Post-process.** Use `/editor-post-production` only after QA passes.
 
-### 0. `/prompt-writer` (recommended)
-Write model-ready scene prompts from the video concept. Applies model-specific structure, camera vocabulary, and constraints. Skip if the user already has scene prompts.
+## Non-negotiable rules
 
-### 1. `/director-frame-gen`
-Generate start frames (and optionally end frames) for each scene using the character reference sheet.
-
-### 2. `/director-clip-gen`
-Generate video clips from the frames. Configure sound on/off based on format config.
-
-### 3. `/director-qa`
-Run QA gates on each clip — anatomy check, critic check, and optionally speech verification. Retry failed scenes (max 5 attempts). If a scene fails all retries, abort.
-
-### 4. `/editor-post-production`
-Assemble the final video — concat, loudnorm, STS, overlay, music, edit, resize, upload. Only runs the steps that apply based on format config.
-
-## Key Behaviors
-
-- **Adapt to any style** — the pipeline is the same, only the config changes
-- **Ask before assuming format** — if unclear whether sound/overlay/STS is needed, ask
-- **Abort early** — if a scene fails 5 retries at any gate, stop. Don't burn credits.
-- **Report per-scene results** — critic scores, attempt counts, final CDN URL
+- Kling 3.0 Motion Control is the sole clone-video model.
+- Never use an alternate model, upstream task ID, or upstream status endpoint
+  in this workflow.
+- Do not resubmit while a Vidjutsu task remains `processing`.
+- Vidjutsu Watch and generation operations require an active subscription and
+  consume daily request capacity rather than per-operation charges.
+- External captions or publishing remain separate and must be labeled as such.

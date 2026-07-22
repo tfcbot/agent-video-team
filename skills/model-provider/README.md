@@ -1,12 +1,10 @@
 # model-provider
 
-Configure AI providers for the director pipeline. Video providers (Wavespeed, KIE), models (Sora 2, Seedance 2, Kling 3.0), and audio (ElevenLabs).
+Configure tenant-scoped Vidjutsu generation and the Kling-only clone workflow.
+Vidjutsu owns provider credentials and runner execution; callers use only their
+Vidjutsu bearer key and Vidjutsu task IDs.
 
-## Files
-
-- [SKILL.md](SKILL.md) — Main skill definition
-
-## Install
+Install from GitHub `main`:
 
 ```bash
 npx skills add tfcbot/agent-video-team

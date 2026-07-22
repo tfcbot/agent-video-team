@@ -1,16 +1,13 @@
 ---
 name: strategist
 description: Create a one-page channel spec — character, handle, format, niche, and 30-day content calendar for a managed account.
-requires:
-  env: []
-compatibility: Works standalone. Pairs with researcher for data-driven format selection.
-homepage: https://github.com/tfcbot/agent-video-team
-source: https://github.com/tfcbot/agent-video-team
 ---
 
 # Strategist
 
-Create a one-page channel spec for a managed account. Each channel is a character with a handle, visual identity, content format, and 30-day posting calendar.
+Create a one-page channel spec. A Vidjutsu account is a tenant-owned draft
+record, not a connected social account or publishing session. External account
+connection and scheduling belong to `/publisher`.
 
 ## Walkthrough
 
@@ -70,6 +67,11 @@ The final channel spec is a single markdown file containing:
 2. Handle & bio
 3. Format definition
 4. 30-day content calendar
+
+If persisting the plan in Vidjutsu, use the authenticated
+`POST https://api.vidjutsu.ai/v1/accounts` draft CRUD contract. It accepts
+`platform: "instagram"`, `name`, and optional `handle`, `bio`, `pfp`, `niche`,
+`linkInBio`, and `tags`; it does not provision or connect an account.
 
 ## Key Behaviors
 

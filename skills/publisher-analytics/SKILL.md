@@ -1,17 +1,13 @@
 ---
 name: publisher-analytics
 description: Pull performance data across connected accounts. Content audit, engagement report, and growth trends using Zernio post data and Instagram Insights.
-requires:
-  env:
-    - ZERNIO_API_KEY
-compatibility: Accounts must be connected via Zernio and have at least 7 days of posting data.
-homepage: https://github.com/tfcbot/agent-video-team
-source: https://github.com/tfcbot/agent-video-team
 ---
 
-# Publisher — Analytics
+# Publisher — External Analytics
 
-Pull performance data across connected accounts and generate reports. Zernio provides post-level data via its API. For detailed engagement metrics (reach, impressions, follower demographics), the user should also reference Instagram Insights directly.
+Pull performance data from Zernio and native platform insights. Vidjutsu has no
+analytics endpoints; `/v1/posts` contains draft metadata rather than publishing
+performance. Never send the requests below to `api.vidjutsu.ai`.
 
 Base URL: `https://zernio.com/api/v1`
 Auth header: `Authorization: Bearer $ZERNIO_API_KEY`
@@ -65,3 +61,5 @@ Authorization: Bearer $ZERNIO_API_KEY
 - **If engagement is declining**, recommend format or hook changes before scaling back.
 - **Don't over-index on follower count.** Profile visits and link clicks matter more.
 - **Zernio provides post history.** For deep metrics, Instagram Insights is primary.
+- **Keep auth and billing separate.** `ZERNIO_API_KEY` is not a Vidjutsu bearer
+  key and Zernio usage is not part of the Vidjutsu subscription.
