@@ -1,170 +1,67 @@
 ---
 name: researcher
-description: Scrape and analyze top-performing content on Instagram and TikTok to build a data-driven content strategy. Walk the user through identifying ICP accounts, analyzing hooks and formats, and building a research brief.
-requires:
-  env:
-    - SCRAPE_CREATORS_API
-    - VIDJUTSU_API_KEY
-compatibility: Requires Scrape Creators API for scraping and VidJutsu API for video analysis via watch.
-homepage: https://github.com/tfcbot/agent-video-team
-source: https://github.com/tfcbot/agent-video-team
+description: >-
+  Research Instagram and TikTok references through Vidjutsu's tenant-scoped
+  scrape and Watch endpoints, using an external discovery API only for keyword
+  or hashtag searches that Vidjutsu does not provide.
 ---
 
 # Researcher
 
-Skill for researching niche content performance on Instagram and TikTok using Scrape Creators for data collection and VidJutsu for video analysis.
+Use `https://api.vidjutsu.ai` with
+`Authorization: Bearer <VIDJUTSU_API_KEY>`. Vidjutsu scrape calls share a
+500/day limit and return `{ "data": <provider response> }`.
 
-## APIs
+## Define the research target
 
-### Scrape Creators
+Collect the niche, platform, success metric, known creators, and desired sample
+size. Prefer 10–15 references.
 
-- **Base URL**: `https://api.scrapecreators.com`
-- **Auth header**: `x-api-key: <SCRAPE_CREATORS_API>`
+## Discover creators and posts
 
-### VidJutsu (watch only)
+Use Vidjutsu for supported operations:
 
-- **Base URL**: `https://api.vidjutsu.ai/v1`
-- **Auth header**: `Authorization: Bearer <VIDJUTSU_API_KEY>`
+| Operation | Endpoint | Body |
+|---|---|---|
+| Instagram profile | `POST /v1/scrape/instagram/profile` | `{ "handle": "name" }` |
+| Instagram reels | `POST /v1/scrape/instagram/user/reels` | `{ "handle": "name", "cursor"?: "..." }` |
+| Instagram post/reel | `POST /v1/scrape/instagram/post` | `{ "url": "https://..." }` |
+| Instagram comments | `POST /v1/scrape/instagram/post/comments` | `{ "url": "https://...", "cursor"?: "..." }` |
+| TikTok profile | `POST /v1/scrape/tiktok/profile` | `{ "handle": "name", "trim"?: true }` |
+| TikTok profile videos | `POST /v1/scrape/tiktok/profile/videos` | `{ "handle": "name", "cursor"?: "..." }` |
+| TikTok user search | `POST /v1/scrape/tiktok/search/users` | `{ "query": "keyword", "cursor"?: "..." }` |
+| TikTok trending | `POST /v1/scrape/tiktok/trending` | `{ "country"?: "us" }` |
+| TikTok video | `POST /v1/scrape/tiktok/video` | `{ "url": "https://...", "trim"?: true }` |
+| TikTok comments | `POST /v1/scrape/tiktok/video/comments` | `{ "url": "https://...", "cursor"?: "..." }` |
+| TikTok transcript | `POST /v1/scrape/tiktok/video/transcript` | `{ "url": "https://..." }` |
 
----
+Vidjutsu does not currently provide Instagram reel keyword search, TikTok video
+keyword search, or TikTok hashtag search. If those discovery operations are
+essential, ask the user before using a separately authenticated Scrape Creators
+account. Keep its `x-api-key`, responses, and billing explicitly external.
 
-## Walkthrough
+## Stage and analyze a selected video
 
-### Step 1 — Define the Niche
+Scrape returns metadata and raw provider URLs; it does not stage media. For a
+selected TikTok or Instagram page URL, call the platform download endpoint once
+and use the returned tenant-owned CDN `url`:
 
-Ask the user for:
-- **Niche** — what space are they in?
-- **Platform** — Instagram, TikTok, or both?
-- **Goal** — what does performing well mean for them? (views, likes, comments, shares, followers)
-- **Known competitors** — any accounts they already know are doing well?
-
-### Step 2 — Search for Top Content
-
-#### Instagram — search reels by keyword
-
-```
-POST https://api.scrapecreators.com/v2/instagram/reels/search
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "keyword": "[NICHE_KEYWORD]" }
-```
-
-#### TikTok — search by keyword
-
-```
-POST https://api.scrapecreators.com/v1/tiktok/search/keyword
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "keyword": "[NICHE_KEYWORD]" }
+```text
+POST /v1/videos/download/tiktok   {"url":"<TikTok page URL>"}
+POST /v1/videos/download/instagram {"url":"<Instagram page URL>"}
 ```
 
-#### TikTok — search by hashtag
+Then run:
 
-```
-POST https://api.scrapecreators.com/v1/tiktok/search/hashtag
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "hashtag": "[HASHTAG]" }
+```bash
+vidjutsu watch --mediaUrl "$STAGED_CDN_URL" --prompt 'Return only JSON with hook, format, pacing, transitions, CTA, tags, and durationSeconds.'
 ```
 
-Collect 10-15 top-performing posts across platforms.
+Watch is synchronous, limited to 50/day, and returns output under `response`.
+Never send the social page URL itself to Watch.
 
-### Step 3 — Gather Account Details
+## Output
 
-For each promising creator, pull their profile:
-
-#### Instagram
-
-```
-POST https://api.scrapecreators.com/v1/instagram/profile
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "username": "[HANDLE]" }
-```
-
-Then get their recent reels (paginated):
-
-```
-POST https://api.scrapecreators.com/v1/instagram/user/reels
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "username": "[HANDLE]" }
-```
-
-For a specific post's details:
-
-```
-POST https://api.scrapecreators.com/v1/instagram/post
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "url": "[POST_URL]" }
-```
-
-For comments on a post:
-
-```
-POST https://api.scrapecreators.com/v2/instagram/post/comments
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "url": "[POST_URL]" }
-```
-
-#### TikTok
-
-```
-POST https://api.scrapecreators.com/v1/tiktok/profile
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "username": "[HANDLE]" }
-```
-
-Get a specific video with transcript:
-
-```
-POST https://api.scrapecreators.com/v2/tiktok/video
-x-api-key: <SCRAPE_CREATORS_API>
-
-{ "url": "[VIDEO_URL]" }
-```
-
-### Step 4 — Analyze Top Content
-
-For each top-performing video, run a VidJutsu watch:
-
-```
-POST https://api.vidjutsu.ai/v1/watch
-Authorization: Bearer <VIDJUTSU_API_KEY>
-
-{
-  "mediaUrl": "[VIDEO_URL]",
-  "prompt": "Analyze this video. Return: hook text, format, pacing, transitions, CTA, tags."
-}
-```
-
-Extract from each analysis:
-- **Hook** — what stops the scroll in the first 1-2 seconds?
-- **Format** — talking head, b-roll, slideshow, text overlay, etc.
-- **Length** — optimal duration for this niche
-- **Transitions** — cuts, zooms, speed ramps
-- **CTA style** — how do they drive action?
-
-### Step 5 — Build Research Brief
-
-Compile findings into a structured brief:
-
-1. **Top hooks** — ranked by engagement
-2. **Winning formats** — which content types perform best
-3. **Posting patterns** — frequency, timing, caption styles
-4. **Content gaps** — topics the niche wants but nobody is making
-5. **Hashtag clusters** — 3-5 hashtag groups that drive discovery
-6. **Platform differences** — what works on Instagram vs TikTok (if both were researched)
-
-Present the brief to the user. This informs all content generation.
-
-## Key Behaviors
-
-- 10 credits per VidJutsu watch call
-- Scrape Creators calls are billed separately via Scrape Creators account
-- Always present findings before generating content
-- Look for content gaps, not just what's popular — differentiation matters
-- Use comments data to understand audience sentiment and unmet needs
+Report ranked hooks, winning formats, pacing and CTA patterns, content gaps,
+audience sentiment, and platform differences. Preserve source URLs and evidence
+for every conclusion. Vidjutsu uses subscription daily limits.

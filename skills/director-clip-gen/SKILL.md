@@ -1,54 +1,59 @@
 ---
 name: director-clip-gen
 description: >-
-  Generate video clips from scene frames using AI video models.
-  Supports Sora 2, Seedance 2, and Kling 3.0.
-requires:
-  env: []
-compatibility: >-
-  Called by the director skill as pipeline step 2.
-  Model API keys depend on which provider the user configured via /model-provider.
+  Submit and monitor a Kling 3.0 Motion Control clone through Vidjutsu using a
+  staged source video, a generated starting image, and a Vidjutsu-owned task ID.
 ---
 
 # Director — Clip Gen
 
-Generate a video clip for each scene from the start frame (and optionally end frame) produced by `/director-frame-gen`.
+Vidjutsu supports one clone-video model: Kling 3.0 Motion Control.
 
-## Models
+## Submit
 
-| Model | Default | Notes |
-|---|---|---|
-| **Sora 2** | Recommended | High quality, strong motion |
-| **Seedance 2** | Alternative | Strong prompt adherence, good cinematic quality |
-| **Kling 3.0** | Fallback | Reliable, clean audio, accessible via KIE API |
+```http
+POST https://api.vidjutsu.ai/v1/clones/video
+Authorization: Bearer <VIDJUTSU_API_KEY>
+Idempotency-Key: <stable workflow key>
+Content-Type: application/json
 
-Use whichever model the user configured via `/model-provider`. If none specified, ask.
-
-## Kling 3.0 (via KIE API)
-
-```
-POST https://api.kie.ai/api/v1/jobs/createTask
 {
-  "model": "kling-3.0/video",
-  "input": {
-    "prompt": "<scene.prompt>",
-    "negative_prompt": "smooth plastic skin, airbrushed skin, beauty filter, floating limbs, disconnected body parts, distorted hands, extra fingers, morphing clothes",
-    "image_urls": ["<startFrameUrl>", "<endFrameUrl (if exists)>"],
-    "sound": <true or false based on format config>,
-    "duration": "10",
-    "aspect_ratio": "9:16",
-    "mode": "std",
-    "multi_shots": false
-  }
+  "startingImageUrl": "<generated starting image URL>",
+  "sourceVideoUrl": "<staged source video URL>",
+  "model": "kling",
+  "prompt": "<optional concise motion-control guidance>"
 }
 ```
 
-Poll `GET /jobs/recordInfo?taskId=<taskId>` every 15s until `state` is `"success"`. Parse `resultJson` for `resultUrls[0]`.
+The source must be public HTTPS and 3–15 seconds. Acceptance is asynchronous:
 
-## Sora 2 / Seedance 2
+```json
+{"id":"<Vidjutsu clone task ID>","status":"processing"}
+```
 
-Refer to the provider's API documentation for endpoint details. The pipeline is the same — send a scene prompt and start frame, get a clip URL back. The start image carries character identity — do not prepend `promptBase` to the scene prompt. The QA gates in `/director-qa` work identically regardless of which model generated the clip.
+Persist `id` immediately. Reusing the same idempotency key prevents duplicate
+generation when the original request outcome is replayed.
 
-## Output
+## Read status
 
-For each scene, produce a video clip URL. Pass to `/director-qa` for QA.
+```http
+GET https://api.vidjutsu.ai/v1/clones/video/{id}
+Authorization: Bearer <VIDJUTSU_API_KEY>
+```
+
+- `processing`: checkpoint the task ID and check again later.
+- `completed`: use the returned `videoUrl`.
+- `failed`: stop and report the returned `error`.
+
+Status reads use Vidjutsu-owned state updated by authenticated runner callbacks.
+They do not poll Kling and do not expose an upstream task ID.
+
+## Rules
+
+- Never select or fall back to another model or Kling version.
+- Never call the dedicated runner or an upstream provider directly.
+- Never resubmit merely because a task is still `processing`.
+- Preserve the returned video without resizing or transcoding until
+  post-production.
+- Clone submissions share the 50/day clone admission group; status reads are
+  unmetered and have no separate per-operation charge.

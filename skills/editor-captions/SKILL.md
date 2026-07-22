@@ -3,19 +3,13 @@ name: editor-captions
 description: >-
   Add animated captions to videos via the ZapCap API. Uploads video, creates a captioning task,
   polls until complete, and downloads the result. Supports custom templates and language selection.
-requires:
-  env:
-    - ZAPCAP_API_KEY
-compatibility: >-
-  Composes with director-* skills (captions after generation) and editor-overlay (captions after overlay).
-  Requires a public video URL as input.
-homepage: https://github.com/tfcbot/agent-video-team
-source: https://github.com/tfcbot/agent-video-team
 ---
 
 # Editor — Captions
 
-Add animated captions to videos via the ZapCap API. Automatic speech-to-text transcription with styled caption rendering.
+Add animated captions through the external ZapCap API. Keep ZapCap credentials,
+billing, and task state
+separate from the Vidjutsu tenant.
 
 ## ZapCap API
 
@@ -73,13 +67,15 @@ Captions should be applied **after** overlays (ZapCap renders on top of everythi
 
 ```
 1. Generate video (any director-* skill)
-2. POST /v1/overlay — burn text overlay (optional)
+2. vidjutsu overlay — burn text overlay (optional)
 3. Upload overlaid video URL to ZapCap → poll → download captioned result
 ```
 
 ## Key Behaviors
 
-- **Input must be a public URL** — if you have a local file, upload it via `POST /v1/upload` first to get a URL.
+- **Input must be a public URL** — if you have a local file, upload it via `vidjutsu upload <file>` first to get a URL.
 - **Apply captions last** — ZapCap renders on top of everything.
 - **Poll, don't block** — captioning takes 30-120 seconds typically.
-- **ZapCap billing is separate** — not charged through VidJutsu credits.
+- **ZapCap billing is separate** — it is not part of the Vidjutsu subscription.
+- **Keep task authority separate** — ZapCap's `taskId` is used only for this
+  external caption job and must never be confused with a Vidjutsu clone task ID.

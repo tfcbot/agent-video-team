@@ -1,125 +1,78 @@
 ---
 name: editor-post-production
 description: >-
-  Assemble and finalize AI videos — concat, loudnorm, STS voice swap, overlay, music,
-  edit, resize, and upload. Only runs the steps that apply based on format config.
-requires:
-  env:
-    - VIDJUTSU_API_KEY
-compatibility: >-
-  Called by the director skill as pipeline step 4.
-  Uses VidJutsu API (overlay, upload, transcribe).
-  ElevenLabs required only if STS voice swap is enabled.
-  Full API reference at https://docs.vidjutsu.ai/llms.txt
+  Assemble and finalize passed Vidjutsu clone videos with concat, loudness
+  normalization, Vidjutsu overlay, optional external captions, resizing, and upload.
 ---
 
-# Director — Post
+# Editor — Post Production
 
-Assemble the final video from passed clips. Each step is conditional — only run what the format config requires.
+Run only the applicable steps. Preserve a pre-edit copy and reuse every
+successful Vidjutsu result.
 
-## Step 1 — Concat
+## 1. Concat
 
-Join all passed clips with ffmpeg hard cuts (no crossfades):
+Join passed clips with hard cuts:
 
 ```bash
 ffmpeg -f concat -safe 0 -i concat.txt -c copy concat.mp4
 ```
 
-If sound is disabled, strip any residual audio:
-```bash
-ffmpeg -i concat.mp4 -an -c:v copy concat-silent.mp4
-```
+If the final video should be silent, strip audio explicitly. Otherwise preserve
+the Kling source soundtrack.
 
-## Step 2 — Loudnorm (if speech enabled)
+## 2. Normalize speech
 
-Skip if the video has no spoken audio.
-
-Two-pass FFmpeg loudnorm at -16 LUFS to normalize volume across scenes:
+For spoken content, apply two-pass FFmpeg loudnorm at -16 LUFS. Verify the
+result through Vidjutsu:
 
 ```bash
-# Pass 1: measure
-ffmpeg -i concat.mp4 -af loudnorm=I=-16:print_format=json -f null /dev/null
-# Pass 2: apply with measured values
-ffmpeg -i concat.mp4 -af "loudnorm=I=-16:measured_I=<val>:measured_LRA=<val>:measured_TP=<val>:measured_thresh=<val>" normalized.mp4
+vidjutsu transcribe --mediaUrl "$PUBLIC_VIDEO_URL"
 ```
 
-## Step 3 — STS voice swap (if enabled)
+Vidjutsu does not replace audio tracks or voices. Any separately authorized audio
+replacement is an external edit and must be labeled as such; it is not part of
+the tenant-scoped generation flow.
 
-Skip if no spoken dialogue or character has no `voiceId`.
+## 3. Overlay
 
-Single-pass ElevenLabs Speech-to-Speech on the full concatenated audio. **Always on the final concat, never per-scene** — this produces consistent levels and is cheaper.
-
-After STS, run `POST /v1/transcribe` to catch any artifacts introduced by the voice swap.
-
-Save a pre-STS copy — if STS introduces issues, you can re-swap or fall back to native voice.
-
-## Step 4 — Overlay (if enabled)
-
-Skip if no overlay text.
-
-```
-POST /v1/overlay
-{
-  "videoUrl": "<videoUrl>",
-  "text": "<overlayText>",
-  "position": "<top|center|bottom>",
-  "fontSize": <optional>
-}
-```
-
-Returns `{ "id": "ovl_...", "resultUrl": "https://cdn.vidjutsu.ai/..." }`.
-
-Apply overlay **before** captions (ZapCap renders on top of everything).
-
-## Step 5 — Music (if provided)
-
-Skip if no music prompt or URL.
-
-**Generate via Suno (through KIE):**
-```
-POST https://api.kie.ai/api/v1/generate
-{
-  "prompt": "<music prompt>",
-  "instrumental": true,
-  "model": "V5",
-  "customMode": false
-}
-```
-Poll `GET /generate/record-info?taskId=<taskId>` every 5s.
-
-**Mix onto video:**
 ```bash
-ffmpeg -i video.mp4 -i music.mp3 -t <duration> \
-  -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k \
-  -af "afade=t=in:st=0:d=0.5,afade=t=out:st=<fadeStart>:d=1.5,volume=0.6" \
-  -shortest output.mp4
+vidjutsu overlay --videoUrl "$VIDEO_URL" --text "$OVERLAY_TEXT" --position bottom
 ```
 
-Defaults: volume 0.6, fade in 0.5s, fade out 1.5s. User can override.
+The synchronous response contains `{id,resultUrl}`. Use `resultUrl` downstream.
+Overlay is limited to 50 requests/day and is included in the subscription.
 
-## Step 6 — Edit (if speech enabled)
+## 4. Captions
 
-Skip if no spoken dialogue.
+Vidjutsu does not render animated captions. If the user requests them, run
+the external `/editor-captions` ZapCap workflow after overlay and disclose its
+separate credential and billing.
 
-- Trim dead air at start/end
-- Shorten silence gaps > 0.5s to 0.3s
-- Mute audio artifacts at specific timestamps
-- Run final `POST /v1/transcribe` to verify the edit is clean
+## 5. Optional music
 
-## Step 7 — Resize
+Vidjutsu does not generate music. Use only a user-supplied or
+separately authorized external music file, then mix it locally. Do not invent a
+Vidjutsu route or embed upstream-task polling in this skill.
 
-Scale to exact 1080x1920 for Instagram Reels:
+## 6. Edit and resize
+
+- Trim dead air at the start and end.
+- Shorten silence gaps only when speech remains natural.
+- Mute timestamped artifacts.
+- Scale and pad to 1080x1920 only when the destination requires it.
 
 ```bash
 ffmpeg -i output.mp4 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -c:a copy final.mp4
 ```
 
-## Step 8 — Upload and report
+## 7. Upload and verify
 
-Upload final video via `POST /v1/upload`. Report:
+```bash
+vidjutsu upload final.mp4
+vidjutsu watch --mediaUrl "$FINAL_CDN_URL" --prompt 'Return only JSON with pass:boolean and issues:string[]. Verify one continuous identity, readable requested text, clean framing, intact audio, and no severe artifacts.'
+```
 
-- Output file path and CDN URL
-- File size and duration
-- Model used
-- Per-scene results: critic score, attempt count
-- Which post-production steps were applied
+The upload response contains `{assetId,url,key,size}`. Watch output is nested in
+`response`. Report the final CDN URL, size, duration, Kling model, QA result,
+and applied post-production steps.

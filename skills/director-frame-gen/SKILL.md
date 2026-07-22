@@ -1,56 +1,67 @@
 ---
 name: director-frame-gen
 description: >-
-  Generate start and end frames for video scenes using AI image generation.
-  Character identity lock via reference sheet. Frame chaining for scene continuity.
-requires:
-  env:
-    - KIE_API_KEY
-compatibility: Called by the director skill as pipeline step 1.
+  Prepare a Vidjutsu clone starting image by extracting source frame zero,
+  creating or reusing a tenant-owned character, and composing the frame through
+  the tenant-scoped Gateway.
 ---
 
 # Director — Frame Gen
 
-Generate start frames (and optionally end frames) for each scene. These frames seed the video generation step with character identity and scene composition.
+Create the identity-locked starting image required by Kling Motion Control.
 
-## Image Generation
+## 1. Extract frame zero
 
-Use nano-banana-2 via KIE for character-consistent image generation:
+Use the raw API so frame zero is sent as the required numeric array. The call is
+synchronous:
 
+```http
+POST https://api.vidjutsu.ai/v1/extract
+Authorization: Bearer <VIDJUTSU_API_KEY>
+Content-Type: application/json
+
+{"mediaUrl":"<staged source URL>","frames":[0]}
 ```
-POST https://api.kie.ai/api/v1/jobs/createTask
+
+Use `frames[0].url` as `firstFrame`. Extract is limited to 100 requests/day.
+
+## 2. Resolve a reusable character
+
+Prefer an existing tenant-owned character ID. Otherwise create one once:
+
+```http
+POST https://api.vidjutsu.ai/v1/characters
+Authorization: Bearer <VIDJUTSU_API_KEY>
+Content-Type: application/json
+
+{"prompt":"<identity description>","referenceImageUrl":"<optional HTTPS image>"}
+```
+
+Store the synchronous response `{id,imageUrl,model}` and reuse `id`.
+
+## 3. Create the starting image
+
+```http
+POST https://api.vidjutsu.ai/v1/clones/starting-image
+Authorization: Bearer <VIDJUTSU_API_KEY>
+Content-Type: application/json
+
 {
-  "model": "nano-banana-2",
-  "input": {
-    "prompt": "<character.promptBase>, <scene.prompt>",
-    "image_input": ["<reference image URL>"],
-    "aspect_ratio": "9:16",
-    "resolution": "2K",
-    "output_format": "png"
-  }
+  "firstFrame": "<frames[0].url>",
+  "characterId": "<char_...>",
+  "prompt": "Replace only the performer identity while preserving pose, framing, lighting, clothing silhouette, background, and composition."
 }
 ```
 
-Poll `GET /jobs/recordInfo?taskId=<taskId>` every 5s until `state` is `"success"`. Parse `resultJson` for `resultUrls[0]`. Retry up to 3 times on failure.
+This call is synchronous and returns `{imageUrl,model}`. Vidjutsu sends the two
+images through the authenticated tenant's scoped Gateway allocation and
+enforces removal of captions, watermarks, and platform UI.
 
-## Frame Chaining
+## Rules
 
-For scene 2 and beyond, reuse the previous scene's end frame as this scene's start image. This creates visual continuity across cuts.
-
-If no end frame exists from the previous scene, generate a fresh start frame using the character reference sheet.
-
-## End Frames
-
-If a scene specifies an `endPrompt`, generate an end frame using the start image as the `image_input` reference. This gives the video generator two keyframes to interpolate between.
-
-## Scene Image Override
-
-If the user provides a `sceneImageUrl` for a scene, skip generation and use that URL directly as the start frame.
-
-## Output
-
-For each scene, produce:
-- `startUrl` — URL of the start frame
-- `endUrl` — URL of the end frame (or null if not generated)
-
-Pass these to `/director-clip-gen`.
+- `firstFrame`, `characterId`, and `prompt` are all required.
+- Do not send legacy identity-image or source-video fields.
+- Do not call an image provider directly.
+- Reuse completed extraction, character, and starting-image results.
+- These stages share the 50/day clone admission group and have no separate
+  per-operation charge.

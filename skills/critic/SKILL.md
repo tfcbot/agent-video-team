@@ -1,57 +1,44 @@
 ---
 name: critic
-description: Analyze video and image content using watch prompts for quality checks, verification, and deep analysis. QA gate before posting.
-requires:
-  env:
-    - VIDJUTSU_API_KEY
-compatibility: Requires VidJutsu API for watch endpoint. Full API reference at https://docs.vidjutsu.ai/llms.txt
-homepage: https://github.com/tfcbot/agent-video-team
-source: https://github.com/tfcbot/agent-video-team
+description: Analyze video and image content through Vidjutsu Watch for quality checks, verification, and deep analysis before publishing.
 ---
 
 # Critic
 
-QA gate for video and image content. One endpoint — `POST /v1/watch` — with different prompts for different jobs.
+Use Vidjutsu Watch for quality analysis. The production API base is
+`https://api.vidjutsu.ai`; raw calls require bearer auth. Watch is synchronous,
+limited to 50 requests/day, and included in the subscription.
 
-## Quality Check
+## Quality check
 
-Score content on a pass/fail basis. Catches bad hooks, visual artifacts, weak CTAs, and audio issues.
-
-```
-POST /v1/watch {
-  "mediaUrl": "[MEDIA_URL]",
-  "prompt": "Score quality 1-10. List issues with severity for: face consistency, artifacts, motion, audio sync."
-}
+```bash
+vidjutsu watch --mediaUrl "$MEDIA_URL" --prompt 'Return only JSON: {"score": number, "issues": [{"severity": "minor"|"major"|"critical", "description": string}]}. Score face consistency, artifacts, motion, and audio sync.'
 ```
 
-Returns structured JSON with score and issues. If score is below threshold, regenerate.
+The API response envelope is:
+
+```json
+{"response":{"score":8,"issues":[]}}
+```
+
+Read model output from `response`; do not expect `score` at the top level.
 
 ## Verification
 
-Check that generated content matches the intended description. Compares the video against the original spec — did the hook land? Is the setting correct? Does the dialogue match?
-
-```
-POST /v1/watch {
-  "mediaUrl": "[MEDIA_URL]",
-  "prompt": "Does this video match this description: [ORIGINAL_DESCRIPTION]. Compare and list discrepancies."
-}
+```bash
+vidjutsu watch --mediaUrl "$MEDIA_URL" --prompt 'Return only JSON describing whether this video matches: <description>. Include matches:boolean and discrepancies:string[].'
 ```
 
-## Deep Analysis
+## Deep analysis
 
-Full content breakdown for strategy or debugging. Returns hook text, format classification, pacing notes, transition types, CTA analysis, and suggested tags.
-
-```
-POST /v1/watch {
-  "mediaUrl": "[MEDIA_URL]",
-  "prompt": "Analyze this video. Return: hook text, format, pacing, transitions, CTA, tags."
-}
+```bash
+vidjutsu watch --mediaUrl "$MEDIA_URL" --prompt 'Return only JSON with hook, format, pacing, transitions, CTA, and tags.'
 ```
 
-## Key Behaviors
+## Rules
 
-- **Run a quality check on every video before posting.** No exceptions.
-- **Verification is optional** — use it when generation quality is inconsistent.
-- **Deep analysis is for strategy and debugging** — don't run it on every video.
-- **If a video fails quality check twice**, change the prompt or model before retrying.
-- 10 credits per watch call.
+- Supply a fetchable media URL, not an Instagram or TikTok page URL. Stage
+  social sources first with the Vidjutsu download endpoint.
+- Parse and validate `response` against the schema requested in the prompt.
+- If a video fails twice, change the generation prompt before retrying.
+- Run quality QA on every final video before publishing.
